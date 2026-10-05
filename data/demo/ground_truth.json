@@ -1,0 +1,188 @@
+{
+  "synthetic": true,
+  "items": [
+    {
+      "row_idx": 0,
+      "item_idx": 0,
+      "sku_id": "sku_cereal_box",
+      "bbox": [
+        50,
+        150,
+        140,
+        260
+      ]
+    },
+    {
+      "row_idx": 0,
+      "item_idx": 1,
+      "sku_id": "sku_soda_can",
+      "bbox": [
+        202,
+        150,
+        292,
+        260
+      ]
+    },
+    {
+      "row_idx": 0,
+      "item_idx": 2,
+      "sku_id": "sku_coffee_jar",
+      "bbox": [
+        354,
+        150,
+        444,
+        260
+      ]
+    },
+    {
+      "row_idx": 0,
+      "item_idx": 3,
+      "sku_id": "sku_snack_pack",
+      "bbox": [
+        506,
+        150,
+        596,
+        260
+      ]
+    },
+    {
+      "row_idx": 0,
+      "item_idx": 4,
+      "sku_id": "sku_tea_box",
+      "bbox": [
+        658,
+        150,
+        748,
+        260
+      ]
+    },
+    {
+      "row_idx": 1,
+      "item_idx": 0,
+      "sku_id": "sku_cereal_box",
+      "bbox": [
+        50,
+        300,
+        140,
+        410
+      ]
+    },
+    {
+      "row_idx": 1,
+      "item_idx": 1,
+      "sku_id": "sku_soda_can",
+      "bbox": [
+        202,
+        300,
+        292,
+        410
+      ]
+    },
+    {
+      "row_idx": 1,
+      "item_idx": 2,
+      "sku_id": "sku_coffee_jar",
+      "bbox": [
+        354,
+        300,
+        444,
+        410
+      ]
+    },
+    {
+      "row_idx": 1,
+      "item_idx": 3,
+      "sku_id": "sku_snack_pack",
+      "bbox": [
+        506,
+        300,
+        596,
+        410
+      ]
+    },
+    {
+      "row_idx": 1,
+      "item_idx": 4,
+      "sku_id": "sku_tea_box",
+      "bbox": [
+        658,
+        300,
+        748,
+        410
+      ]
+    },
+    {
+      "row_idx": 2,
+      "item_idx": 0,
+      "sku_id": "sku_cereal_box",
+      "bbox": [
+        50,
+        450,
+        140,
+        560
+      ]
+    },
+    {
+      "row_idx": 2,
+      "item_idx": 1,
+      "sku_id": "sku_soda_can",
+      "bbox": [
+        202,
+        450,
+        292,
+        560
+      ]
+    },
+    {
+      "row_idx": 2,
+      "item_idx": 2,
+      "sku_id": "sku_coffee_jar",
+      "bbox": [
+        354,
+        450,
+        444,
+        560
+      ]
+    },
+    {
+      "row_idx": 2,
+      "item_idx": 3,
+      "sku_id": "sku_snack_pack",
+      "bbox": [
+        506,
+        450,
+        596,
+        560
+      ]
+    },
+    {
+      "row_idx": 2,
+      "item_idx": 4,
+      "sku_id": "sku_tea_box",
+      "bbox": [
+        658,
+        450,
+        748,
+        560
+      ]
+    }
+  ],
+  "events": [
+    {
+      "frame": 10,
+      "cell": [
+        1,
+        2
+      ],
+      "event": "EMPTY (Out of Stock)"
+    },
+    {
+      "frame": 15,
+      "cell": [
+        0,
+        3
+      ],
+      "event": "MISPLACED (Wrong SKU)"
+    }
+  ]
+}

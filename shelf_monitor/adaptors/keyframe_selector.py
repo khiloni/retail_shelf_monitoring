@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+from typing import Optional
 
 from ..entities.frame import Frame
 from ..frameworks.logging_config import get_logger

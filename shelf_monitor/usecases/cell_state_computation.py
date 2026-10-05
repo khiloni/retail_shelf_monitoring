@@ -138,7 +138,7 @@ class CellStateComputation:
             "total_cells": total_cells,
             "fill_pct": round(fill_pct, 2),
             "compliance_pct": round(compliance_pct, 2),
-            "timestamp": ts,
+            "timestamp": ts.isoformat(),
         }
 
         logger.debug(
@@ -172,6 +172,6 @@ class CellStateComputation:
             "total_cells": total,
             "fill_pct": 0.0,
             "compliance_pct": 0.0,
-            "timestamp": ts,
+            "timestamp": ts.isoformat(),
         }
         return {"cell_states": cell_states, "summary": summary}

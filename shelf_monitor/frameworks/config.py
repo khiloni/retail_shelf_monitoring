@@ -12,8 +12,6 @@ from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings  # optional: falls back gracefully
-
 
 # ---------------------------------------------------------------------------
 # Sub-config sections

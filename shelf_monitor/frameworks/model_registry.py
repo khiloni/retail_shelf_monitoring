@@ -167,13 +167,24 @@ class ModelRegistry:
         return p if p.exists() else None
 
     def print_status(self) -> None:
-        """Print a summary banner to stdout."""
-        print("=" * _BANNER_WIDTH)
-        print(f"  Model Registry  —  mode: {self.mode.value}")
-        print("=" * _BANNER_WIDTH)
-        for line in self._status_lines:
-            print(line)
-        print("=" * _BANNER_WIDTH)
+        """Print a summary banner to stdout (UTF-8 safe on Windows)."""
+        import sys
+        sep = "=" * _BANNER_WIDTH
+        lines = [
+            sep,
+            f"  Model Registry  -  mode: {self.mode.value}",
+            sep,
+            *self._status_lines,
+            sep,
+        ]
+        output = "\n".join(lines) + "\n"
+        # Write UTF-8 directly to avoid Windows cp1252 codec errors
+        try:
+            sys.stdout.buffer.write(output.encode("utf-8"))
+            sys.stdout.buffer.flush()
+        except AttributeError:
+            # Fallback: replace non-encodable chars
+            print(output.encode("ascii", errors="replace").decode("ascii"))
 
     def status_table(self) -> list[dict]:
         """Return status as a list of dicts for the check-models CLI."""
@@ -244,22 +255,22 @@ class ModelRegistry:
             f"  embedding     : {'OK' if has_embedding else 'MISSING'}",
             f"  FAISS index   : {'OK' if has_index else 'MISSING'}",
             f"  SKU labels    : {'OK (%d SKUs)' % len(self.sku_labels) if has_labels else 'MISSING'}",
-            f"  ─── MODE: {self.mode.value} ───",
+            f"  --- MODE: {self.mode.value} ---",
         ]
 
         if self.mode == ModelMode.BASELINE:
             logger.warning(
-                "⚠ BASELINE mode: no custom detector found. "
+                "[!] BASELINE mode: no custom detector found. "
                 "Using stock yolo11n.pt. Accuracy on dense shelves will be limited. "
                 "Run on Colab/Kaggle to train and copy models/ into place."
             )
         elif self.mode == ModelMode.POSITION_ONLY:
             logger.warning(
-                "⚠ POSITION-ONLY mode: detector OK but no embedding/index. "
+                "[!] POSITION-ONLY mode: detector OK but no embedding/index. "
                 "SKU recognition disabled; MISPLACED alerts will not fire."
             )
         else:
-            logger.info("✓ FULL mode: all models loaded.")
+            logger.info("[OK] FULL mode: all models loaded.")
 
     def _validate_dim_consistency(self) -> None:
         """Check that embedding dim matches FAISS index dim."""

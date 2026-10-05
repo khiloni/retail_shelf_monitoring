@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -25,7 +26,7 @@ from shelf_monitor.entities.detection import Detection
 from shelf_monitor.frameworks.model_registry import ModelManifest
 from shelf_monitor.usecases.grid.grid_detector import GridDetector
 from shelf_monitor.usecases.metrics import compute_metrics_from_cell_states
-from .make_demo_data import make_all_demo_data
+from .make_demo_data import SKU_COLORS, make_all_demo_data
 
 
 class ClassicalSyntheticDetector:
@@ -38,29 +39,51 @@ class ClassicalSyntheticDetector:
         if img is None or img.size == 0:
             return []
 
-        h, w = img.shape[:2]
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # Background is 235, shelf bar is ~140, products are colored boxes
-        mask = (gray < 220) & (gray > 30)
+        # Color-threshold each synthetic SKU fill (avoids shelf bars merging rows).
+        detections: list[Detection] = []
+        img_f = img.astype(np.float32)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
 
-        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        detections = []
-        for c in contours:
-            x, y, bw, bh = cv2.boundingRect(c)
-            # Filter for product aspect ratios and sizes
-            if 60 <= bw <= 130 and 80 <= bh <= 150:
-                detections.append(
-                    Detection(
-                        shelf_id="demo_shelf",
-                        frame_timestamp=None or asyncio.get_event_loop().time() if False else None,
-                        bbox=BoundingBox(x1=x, y1=y, x2=x + bw, y2=y + bh),
-                        class_id=0,
-                        sku_id="unknown_sku",
-                        confidence=0.98,
+        for _sku_id, bgr in SKU_COLORS.items():
+            target = np.array(bgr, dtype=np.float32)
+            dist = np.linalg.norm(img_f - target, axis=2)
+            mask = ((dist < 45).astype(np.uint8)) * 255
+            if mask.sum() == 0:
+                continue
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for c in contours:
+                x, y, bw, bh = cv2.boundingRect(c)
+                if 60 <= bw <= 130 and 80 <= bh <= 150:
+                    detections.append(
+                        Detection(
+                            shelf_id="demo_shelf",
+                            frame_timestamp=datetime.now(timezone.utc),
+                            bbox=BoundingBox(x1=x, y1=y, x2=x + bw, y2=y + bh),
+                            class_id=0,
+                            sku_id="unknown_sku",
+                            confidence=0.98,
+                        )
                     )
-                )
 
-        return sorted(detections, key=lambda d: (d.bbox.y1 // 100, d.bbox.x1))
+        # Drop duplicate boxes from overlapping color masks (IoU > 0.5).
+        unique: list[Detection] = []
+        for det in sorted(detections, key=lambda d: d.bbox.area, reverse=True):
+            dup = False
+            for kept in unique:
+                ix1 = max(det.bbox.x1, kept.bbox.x1)
+                iy1 = max(det.bbox.y1, kept.bbox.y1)
+                ix2 = min(det.bbox.x2, kept.bbox.x2)
+                iy2 = min(det.bbox.y2, kept.bbox.y2)
+                inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                union = det.bbox.area + kept.bbox.area - inter
+                if union > 0 and inter / union > 0.5:
+                    dup = True
+                    break
+            if not dup:
+                unique.append(det)
+
+        return sorted(unique, key=lambda d: (d.bbox.y1 // 100, d.bbox.x1))
 
 
 class ClassicalSyntheticSkuRecognizer:
