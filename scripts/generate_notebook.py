@@ -1,0 +1,544 @@
+"""Generates the validated training/colab_train.ipynb notebook matching all criteria in section C."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+
+def build_colab_notebook() -> dict:
+    cells = []
+
+    # Cell 0: Title & Instructions
+    cells.append(
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "# Retail Shelf Monitoring System — Model Training & Export Pipeline\n",
+                "\n",
+                "This notebook trains and exports the two deep-learning models for the Retail Shelf Monitoring system:\n",
+                "1. **YOLO11 Product Detector** (Pre-trained on SKU-110K dense retail shelves + fine-tuned on custom store images)\n",
+                "2. **MobileNetV3-Large SKU Embedding Model & FAISS Index** (Metric learning on product crops)\n",
+                "\n",
+                "### Instructions:\n",
+                "- **Runtime**: Select **GPU** (Colab: `Runtime` -> `Change runtime type` -> `T4 GPU` or Kaggle: `Accelerator` -> `GPU P100/T4`).\n",
+                "- **Expected Runtime**: ~45-90 minutes depending on chosen epochs and dataset fraction.\n",
+                "- **Input**: Upload `project_for_colab.zip` (generated locally with `python scripts/package_for_colab.py`).\n",
+                "- **Output**: Automatically downloads `shelf_models.zip`. Unzip it into your local `models/` directory.\n",
+            ],
+        }
+    )
+
+    # Cell 1: Config
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 1: TRAINING CONFIGURATION\n",
+                "# =============================================================================\n",
+                "SMOKE_TEST = False               # Set to True for quick 1-epoch dry run on CPU\n",
+                "EPOCHS_STAGE1 = 30              # Stage 1 pretraining on SKU-110K\n",
+                "EPOCHS_STAGE2 = 15              # Stage 2 fine-tuning on custom store data\n",
+                "EMBED_EPOCHS = 10               # Metric learning epochs for SKU crops\n",
+                "IMGSZ = 640                     # Input image resolution (640 recommended)\n",
+                "BATCH = 'auto'                  # Batch size ('auto' or integer e.g. 16)\n",
+                "MODEL_SIZE = 'yolo11s.pt'       # Base model: yolo11n.pt, yolo11s.pt, yolo11m.pt\n",
+                "SKU110K_FRACTION = 1.0          # Fraction of SKU-110K to use (e.g. 0.3 for faster pretraining)\n",
+                "RUN_ABLATION = True             # Run ablation: COCO vs SKU-110K vs Fine-tuned\n",
+                "SEED = 42\n",
+                "\n",
+                "# Custom Dataset Configuration (Roboflow or uploaded zip)\n",
+                "# Leave blank to skip custom fine-tuning and use SKU-110K weights only\n",
+                "CUSTOM_DATA = {\n",
+                "    'zip_path': None,           # e.g. 'custom_store_data.zip'\n",
+                "    'roboflow_api_key': None,   # Roboflow API key (optional)\n",
+                "    'workspace': None,\n",
+                "    'project': None,\n",
+                "    'version': 1,\n",
+                "}\n",
+                "\n",
+                "# Reference SKU Crops (class-per-folder)\n",
+                "SKU_CROPS_DIR = None            # e.g. 'sku_crops' folder or zip with class folders\n",
+            ],
+        }
+    )
+
+    # Cell 2: Environment detection, GPU check, and dependency installation
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 2: ENVIRONMENT DETECTION & DEPENDENCIES\n",
+                "# =============================================================================\n",
+                "import os, sys\n",
+                "import torch\n",
+                "\n",
+                "is_colab = 'google.colab' in sys.modules\n",
+                "is_kaggle = os.path.exists('/kaggle/working')\n",
+                "env_name = 'Google Colab' if is_colab else ('Kaggle' if is_kaggle else 'Standard Python')\n",
+                "print(f\"Detected environment: {env_name}\")\n",
+                "\n",
+                "has_gpu = torch.cuda.is_available()\n",
+                "if has_gpu:\n",
+                "    gpu_name = torch.cuda.get_device_name(0)\n",
+                "    print(f\"✓ GPU active: {gpu_name}\")\n",
+                "else:\n",
+                "    if not SMOKE_TEST:\n",
+                "        raise SystemError(\"No GPU detected! Please enable GPU accelerator in Runtime settings or set SMOKE_TEST = True.\")\n",
+                "    print(\"⚠ Running on CPU (SMOKE_TEST mode)\")\n",
+                "\n",
+                "# Install training dependencies\n",
+                "!pip install -q ultralytics onnx onnxruntime faiss-cpu roboflow pydantic pyyaml scikit-learn\n",
+            ],
+        }
+    )
+
+    # Cell 3: Get Project Code
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 3: EXTRACT PROJECT CODE\n",
+                "# =============================================================================\n",
+                "import zipfile\n",
+                "from pathlib import Path\n",
+                "\n",
+                "# If project_for_colab.zip was uploaded, extract it\n",
+                "if os.path.exists('project_for_colab.zip'):\n",
+                "    print(\"Extracting uploaded project_for_colab.zip...\")\n",
+                "    with zipfile.ZipFile('project_for_colab.zip', 'r') as zf:\n",
+                "        zf.extractall('.')\n",
+                "    print(\"✓ Project files extracted.\")\n",
+                "elif is_colab and not os.path.exists('shelf_monitor'):\n",
+                "    from google.colab import files\n",
+                "    print(\"Please upload project_for_colab.zip from your local computer:\")\n",
+                "    uploaded = files.upload()\n",
+                "    for fn in uploaded.keys():\n",
+                "        if fn.endswith('.zip'):\n",
+                "            with zipfile.ZipFile(fn, 'r') as zf:\n",
+                "                zf.extractall('.')\n",
+                "            print(f\"✓ Extracted {fn}\")\n",
+                "\n",
+                "sys.path.insert(0, os.path.abspath('.'))\n",
+                "print(\"Project import path verified.\")\n",
+            ],
+        }
+    )
+
+    # Cell 4: Persistence setup
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 4: PERSISTENCE & CHECKPOINTS\n",
+                "# =============================================================================\n",
+                "checkpoint_dir = Path('/kaggle/working/checkpoints') if is_kaggle else Path('checkpoints')\n",
+                "if is_colab:\n",
+                "    try:\n",
+                "        from google.colab import drive\n",
+                "        drive.mount('/content/drive')\n",
+                "        checkpoint_dir = Path('/content/drive/MyDrive/shelf_checkpoints')\n",
+                "        print(f\"Mounted Google Drive. Checkpoints will be saved to: {checkpoint_dir}\")\n",
+                "    except Exception as e:\n",
+                "        print(f\"Drive mount skipped: {e}. Saving checkpoints locally.\")\n",
+                "\n",
+                "checkpoint_dir.mkdir(parents=True, exist_ok=True)\n",
+                "output_models_dir = Path('models_export')\n",
+                "output_models_dir.mkdir(parents=True, exist_ok=True)\n",
+            ],
+        }
+    )
+
+    # Cell 5: Data Preparation
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 5: DATA PREPARATION (SKU-110K & CUSTOM DATA)\n",
+                "# =============================================================================\n",
+                "from ultralytics import YOLO\n",
+                "from training.prepare_roboflow import prepare_roboflow_dataset\n",
+                "\n",
+                "# Ultralytics automatically downloads and formats SKU-110K when passed 'SKU-110K.yaml'\n",
+                "sku110k_yaml = 'SKU-110K.yaml'\n",
+                "print(\"SKU-110K dataset ready via Ultralytics auto-download.\")\n",
+                "\n",
+                "# Prepare optional custom dataset\n",
+                "custom_yaml = None\n",
+                "if CUSTOM_DATA.get('zip_path') or CUSTOM_DATA.get('roboflow_api_key'):\n",
+                "    custom_dir = prepare_roboflow_dataset(\n",
+                "        zip_path=CUSTOM_DATA.get('zip_path'),\n",
+                "        api_key=CUSTOM_DATA.get('roboflow_api_key'),\n",
+                "        workspace=CUSTOM_DATA.get('workspace'),\n",
+                "        project=CUSTOM_DATA.get('project'),\n",
+                "        version=CUSTOM_DATA.get('version', 1),\n",
+                "        output_dir='data/custom_yolo'\n",
+                "    )\n",
+                "    if (custom_dir / 'data.yaml').exists():\n",
+                "        custom_yaml = str(custom_dir / 'data.yaml')\n",
+                "        print(f\"✓ Custom dataset ready: {custom_yaml}\")\n",
+            ],
+        }
+    )
+
+    # Cell 6: Stage 1 Training
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 6: STAGE 1 — PRETRAIN ON SKU-110K\n",
+                "# =============================================================================\n",
+                "from training.train_detector import train_detector\n",
+                "\n",
+                "print(\"Starting Stage 1 Pretraining on SKU-110K...\")\n",
+                "stage1_pt = train_detector(\n",
+                "    stage1_data=sku110k_yaml if not SMOKE_TEST else None,\n",
+                "    stage2_data=None,\n",
+                "    epochs_stage1=EPOCHS_STAGE1,\n",
+                "    batch=BATCH,\n",
+                "    imgsz=IMGSZ,\n",
+                "    model_size=MODEL_SIZE,\n",
+                "    device='0' if has_gpu else 'cpu',\n",
+                "    seed=SEED,\n",
+                "    output_dir=output_models_dir,\n",
+                "    smoke_test=SMOKE_TEST,\n",
+                ")\n",
+                "print(f\"✓ Stage 1 model ready: {stage1_pt}\")\n",
+            ],
+        }
+    )
+
+    # Cell 7: Stage 2 Training (Fine-tuning)
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 7: STAGE 2 — FINE-TUNE ON CUSTOM STORE DATA\n",
+                "# =============================================================================\n",
+                "final_detector_pt = stage1_pt\n",
+                "if custom_yaml and os.path.exists(custom_yaml):\n",
+                "    print(f\"Fine-tuning on custom data: {custom_yaml}...\")\n",
+                "    final_detector_pt = train_detector(\n",
+                "        stage1_data=None,\n",
+                "        stage2_data=custom_yaml,\n",
+                "        epochs_stage2=EPOCHS_STAGE2,\n",
+                "        batch=BATCH,\n",
+                "        imgsz=IMGSZ,\n",
+                "        model_size=str(stage1_pt),\n",
+                "        device='0' if has_gpu else 'cpu',\n",
+                "        seed=SEED,\n",
+                "        output_dir=output_models_dir,\n",
+                "        smoke_test=SMOKE_TEST,\n",
+                "    )\n",
+                "else:\n",
+                "    print(\"No custom data specified. Using Stage 1 (SKU-110K) weights as final detector.\")\n",
+            ],
+        }
+    )
+
+    # Cell 8: Evaluation & Ablation
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 8: EVALUATION & METRICS\n",
+                "# =============================================================================\n",
+                "from training.evaluate import evaluate_system\n",
+                "\n",
+                "eval_data = custom_yaml if custom_yaml else sku110k_yaml\n",
+                "eval_metrics = evaluate_system(\n",
+                "    model_path=final_detector_pt,\n",
+                "    dataset_yaml=eval_data,\n",
+                "    out_dir='outputs/reports'\n",
+                ")\n",
+                "print(\"Evaluation Summary:\", eval_metrics)\n",
+            ],
+        }
+    )
+
+    # Cell 9: Train Embedding Network
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 9: TRAIN SKU EMBEDDING NETWORK\n",
+                "# =============================================================================\n",
+                "from training.train_embedding import train_embedding\n",
+                "\n",
+                "crop_source = SKU_CROPS_DIR or 'data/crops'\n",
+                "embedding_pt = train_embedding(\n",
+                "    data_dir=crop_source,\n",
+                "    epochs=EMBED_EPOCHS,\n",
+                "    batch_size=32 if has_gpu else 4,\n",
+                "    embedding_dim=256,\n",
+                "    device='cuda' if has_gpu else 'cpu',\n",
+                "    output_dir=output_models_dir,\n",
+                "    smoke_test=SMOKE_TEST,\n",
+                ")\n",
+                "print(f\"✓ Embedding network weights: {embedding_pt}\")\n",
+            ],
+        }
+    )
+
+    # Cell 10: Build FAISS Index
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 10: BUILD FAISS INDEX & SKU LABELS\n",
+                "# =============================================================================\n",
+                "from training.build_sku_index import build_index_from_crops\n",
+                "\n",
+                "crop_dir = SKU_CROPS_DIR or ('outputs/scratch_crops' if os.path.exists('outputs/scratch_crops') else 'data/crops')\n",
+                "num_vecs, num_classes = build_index_from_crops(\n",
+                "    crops_dir=crop_dir,\n",
+                "    output_dir=output_models_dir,\n",
+                "    embedding_model_path=embedding_pt,\n",
+                "    embedding_dim=256,\n",
+                ")\n",
+                "print(f\"✓ Indexed {num_vecs} vectors across {num_classes} SKUs.\")\n",
+            ],
+        }
+    )
+
+    # Cell 11: Export ONNX
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 11: EXPORT ONNX & VERIFY PARITY\n",
+                "# =============================================================================\n",
+                "from training.export_onnx import export_detector_onnx, export_embedding_onnx\n",
+                "\n",
+                "detector_onnx = export_detector_onnx(\n",
+                "    pt_path=final_detector_pt,\n",
+                "    out_path=output_models_dir / 'product_detector.onnx',\n",
+                "    imgsz=IMGSZ,\n",
+                ")\n",
+                "\n",
+                "embedding_onnx = export_embedding_onnx(\n",
+                "    pt_path=embedding_pt,\n",
+                "    out_path=output_models_dir / 'sku_embedding.onnx',\n",
+                "    embedding_dim=256,\n",
+                ")\n",
+                "print(\"✓ Both models exported to ONNX successfully.\")\n",
+            ],
+        }
+    )
+
+    # Cell 12: Validate Artifacts
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 12: VALIDATE CONTRACT ARTIFACTS\n",
+                "# =============================================================================\n",
+                "required_files = [\n",
+                "    'product_detector.pt',\n",
+                "    'product_detector.onnx',\n",
+                "    'sku_embedding.pt',\n",
+                "    'sku_embedding.onnx',\n",
+                "    'sku_index.faiss',\n",
+                "    'sku_labels.json',\n",
+                "]\n",
+                "\n",
+                "all_present = True\n",
+                "print(\"Checking generated artifacts against contract:\")\n",
+                "for fn in required_files:\n",
+                "    fp = output_models_dir / fn\n",
+                "    if fp.exists():\n",
+                "        print(f\"  [✓] {fn:<24} : {fp.stat().st_size // 1024} KB\")\n",
+                "    else:\n",
+                "        print(f\"  [✗] MISSING: {fn}\")\n",
+                "        all_present = False\n",
+                "\n",
+                "assert all_present, \"Missing one or more required model contract files!\"\n",
+                "print(\"✓ All contract files verified.\")\n",
+            ],
+        }
+    )
+
+    # Cell 13: Write Manifest & Bundle ZIP
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 13: WRITE MANIFEST & BUNDLE shelf_models.zip\n",
+                "# =============================================================================\n",
+                "import json, zipfile\n",
+                "from datetime import datetime, timezone\n",
+                "from shelf_monitor.frameworks.model_registry import ModelManifest\n",
+                "\n",
+                "manifest = ModelManifest(\n",
+                "    schema_version='1.0',\n",
+                "    created_at=datetime.now(timezone.utc).isoformat(),\n",
+                "    synthetic=SMOKE_TEST,\n",
+                "    detector={\n",
+                "        'file': 'product_detector.pt',\n",
+                "        'onnx_file': 'product_detector.onnx',\n",
+                "        'imgsz': IMGSZ,\n",
+                "        'conf_default': 0.35,\n",
+                "        'iou_default': 0.45,\n",
+                "        'max_det': 300,\n",
+                "        'class_names': ['product']\n",
+                "    },\n",
+                "    embedding={\n",
+                "        'file': 'sku_embedding.pt',\n",
+                "        'onnx_file': 'sku_embedding.onnx',\n",
+                "        'input_size': 224,\n",
+                "        'dim': 256,\n",
+                "        'backbone': 'mobilenet_v3_large'\n",
+                "    },\n",
+                "    index={\n",
+                "        'file': 'sku_index.faiss',\n",
+                "        'labels_file': 'sku_labels.json',\n",
+                "        'metric': 'inner_product',\n",
+                "        'dim': 256,\n",
+                "        'num_vectors': num_vecs,\n",
+                "        'similarity_threshold': 0.6\n",
+                "    },\n",
+                "    metrics=eval_metrics,\n",
+                "    training={\n",
+                "        'epochs_stage1': EPOCHS_STAGE1,\n",
+                "        'epochs_stage2': EPOCHS_STAGE2 if custom_yaml else 0,\n",
+                "        'dataset_notes': 'SKU-110K Pretrained + Custom fine-tuned' if custom_yaml else 'SKU-110K Pretrained'\n",
+                "    }\n",
+                ")\n",
+                "\n",
+                "manifest_path = output_models_dir / 'model_manifest.json'\n",
+                "with open(manifest_path, 'w', encoding='utf-8') as f:\n",
+                "    f.write(manifest.model_dump_json(indent=2))\n",
+                "print(f\"✓ Created {manifest_path}\")\n",
+                "\n",
+                "# Bundle into single zip file: shelf_models.zip\n",
+                "zip_path = 'shelf_models.zip'\n",
+                "with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:\n",
+                "    for f in output_models_dir.iterdir():\n",
+                "        if f.is_file():\n",
+                "            zf.write(f, arcname=f.name)\n",
+                "\n",
+                "print(f\"\\n{'='*60}\")\n",
+                "print(f\"✓ SUCCESSFULLY BUNDLED: {zip_path} ({os.path.getsize(zip_path) // (1024*1024)} MB)\")\n",
+                "print(f\"{'='*60}\")\n",
+            ],
+        }
+    )
+
+    # Cell 14: Download / Output
+    cells.append(
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "# =============================================================================\n",
+                "# CELL 14: DOWNLOAD AND NEXT STEPS\n",
+                "# =============================================================================\n",
+                "if is_colab:\n",
+                "    from google.colab import files\n",
+                "    print(\"Downloading shelf_models.zip to your computer...\")\n",
+                "    files.download('shelf_models.zip')\n",
+                "elif is_kaggle:\n",
+                "    print(\"On Kaggle: Navigate to the 'Output' tab on the right panel and download 'shelf_models.zip'.\")\n",
+                "\n",
+                "print(\"\"\"\n",
+                "===============================================================================\n",
+                "NEXT STEPS:\n",
+                "1. Download 'shelf_models.zip'\n",
+                "2. Extract its contents directly into your local 'models/' directory:\n",
+                "   DL-PROJECT/models/\n",
+                "     ├── product_detector.pt\n",
+                "     ├── product_detector.onnx\n",
+                "     ├── sku_embedding.pt\n",
+                "     ├── sku_embedding.onnx\n",
+                "     ├── sku_index.faiss\n",
+                "     ├── sku_labels.json\n",
+                "     └── model_manifest.json\n",
+                "3. In your local terminal, run:\n",
+                "   python -m shelf_monitor check-models\n",
+                "   python -m shelf_monitor ui\n",
+                "===============================================================================\n",
+                "\"\"\")\n",
+            ],
+        }
+    )
+
+    nb = {
+        "cells": cells,
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3",
+            },
+            "language_info": {
+                "name": "python",
+                "version": "3.10.0",
+            },
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+    return nb
+
+
+if __name__ == "__main__":
+    nb = build_colab_notebook()
+    out_file = Path("training/colab_train.ipynb")
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    with out_file.open("w", encoding="utf-8") as f:
+        json.dump(nb, f, indent=2)
+    print(f"Generated {out_file} ({len(nb['cells'])} cells)")

@@ -1,0 +1,79 @@
+# Retail Shelf Monitoring Configuration
+# Copy this file to config.yaml and customize for your environment
+
+app:
+  name: "Retail Shelf Monitor"
+  debug: false
+  models_dir: "models"  # Directory where shelf_models.zip is extracted
+
+database:
+  backend: "sqlite"  # "sqlite" or "postgres"
+  sqlite_path: "outputs/shelf_monitor.db"
+  host: "localhost"
+  port: 5432
+  database: "retail_shelf_monitoring"
+  user: "postgres"
+  password: "postgres"
+
+alerts:
+  backend: "memory"  # "memory" (default, zero setup) or "redis"
+  redis_host: "localhost"
+  redis_port: 6379
+  redis_db: 0
+  redis_password: null
+
+ml:
+  model_path: null  # Auto-loaded by ModelRegistry from models/product_detector.pt or .onnx
+  inference_engine: "ultralytics"  # "ultralytics" or "onnxruntime"
+  confidence: 0.35
+  iou: 0.45
+  imgsz: 640
+  max_det: 300
+  device: "auto"  # "auto", "cpu", "cuda", "cuda:0"
+  class_names: ["product"]
+
+sku:
+  embedding_model_path: null  # Auto-loaded from models/sku_embedding.pt or .onnx
+  index_path: null            # Auto-loaded from models/sku_index.faiss
+  labels_path: null           # Auto-loaded from models/sku_labels.json
+  top_k: 3
+  similarity_threshold: 0.6
+  embedding_dim: 256
+  input_size: 224
+  re_id_every_k_frames: 10
+
+grid:
+  clustering_method: "dbscan"  # "dbscan" or "kmeans"
+  eps: 15.0
+  min_samples: 2
+  position_tolerance: 1
+
+aligner:
+  single_shelf_mode: true  # True skips visual homography alignment and uses fixed_shelf_id
+  fixed_shelf_id: "shelf_1"
+  reference_dir: "data/reference_shelves"
+  feature_type: "orb"  # "orb" or "sift"
+  max_features: 5000
+  lowe_ratio: 0.75
+  ransac_reproj: 5.0
+  min_alignment_confidence: 0.3
+
+stream:
+  keyframe_interval: 15
+  diff_threshold: 0.05
+  single_shelf_mode: true
+
+tracking:
+  max_age: 30
+  min_hits: 3
+  iou_threshold: 0.3
+
+consensus:
+  min_consecutive_frames: 3
+  clear_after_frames: 2
+  state_timeout_sec: 300
+
+logging:
+  level: "INFO"
+  format: "text"  # "text" or "json"
+  file_path: null

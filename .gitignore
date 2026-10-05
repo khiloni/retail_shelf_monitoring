@@ -1,0 +1,52 @@
+# Python & Virtual Environments
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local database & logs
+outputs/shelf_monitor.db
+outputs/shelf_monitor.db*
+*.log
+
+# Large Datasets and media
+data/SKU110K*/
+data/custom_yolo/
+data/demo/*.mp4
+data/demo/*.jpg
+data/reference_shelves/*
+!data/README.md
+
+# Generated outputs
+outputs/runs/*
+outputs/evidence/*
+outputs/reports/*
+!outputs/demo_models/
+!outputs/**/README.md
+
+# Trained models (must be unzipped manually by user)
+models/*.pt
+models/*.onnx
+models/*.faiss
+models/*.json
+!models/README.md
+!models/.gitkeep
+
+# Colab package
+project_for_colab.zip
+shelf_models.zip
+
+# IDEs
+.vscode/
+.idea/
+
+reference/
