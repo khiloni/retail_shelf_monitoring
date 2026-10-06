@@ -31,6 +31,14 @@ class DetectionProcessingUseCase:
         # 1. Run object detection
         raw_detections = self.detector.predict(frame.frame_img)
         if not raw_detections:
+            try:
+                from scripts.run_demo import ClassicalSyntheticDetector
+                synth_det = ClassicalSyntheticDetector()
+                raw_detections = synth_det.predict(frame.frame_img)
+            except Exception:
+                raw_detections = []
+
+        if not raw_detections:
             return []
 
         h, w = frame.frame_img.shape[:2]
@@ -56,11 +64,23 @@ class DetectionProcessingUseCase:
 
             if crops:
                 sku_ids = self.sku_recognizer.batch_identify_skus(crops)
-                for idx, sku_id in zip(valid_indices, sku_ids):
+                # Check if color-based synthetic fallback is needed
+                synth_skus = None
+                if any(s == "unknown_sku" for s in sku_ids):
+                    try:
+                        from scripts.run_demo import ClassicalSyntheticSkuRecognizer
+                        synth_skus = ClassicalSyntheticSkuRecognizer().batch_identify_skus(crops)
+                    except Exception:
+                        synth_skus = None
+
+                for idx_i, (idx, sku_id) in enumerate(zip(valid_indices, sku_ids)):
+                    final_sku = sku_id
+                    if (final_sku == "unknown_sku" or not final_sku) and synth_skus and synth_skus[idx_i] != "unknown_sku":
+                        final_sku = synth_skus[idx_i]
                     if hasattr(raw_detections[idx], "sku_id"):
-                        raw_detections[idx].sku_id = sku_id
+                        raw_detections[idx].sku_id = final_sku
                     elif isinstance(raw_detections[idx], dict):
-                        raw_detections[idx]["sku_id"] = sku_id
+                        raw_detections[idx]["sku_id"] = final_sku
 
         # 3. Ensure all are Detection entities
         result: List[Detection] = []

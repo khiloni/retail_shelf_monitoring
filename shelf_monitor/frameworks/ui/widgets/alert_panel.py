@@ -82,13 +82,22 @@ class AlertPanel(QWidget):
         row = rows[0].row()
         if 0 <= row < len(self._alerts):
             alert = self._alerts[row]
+            t_str = alert.alert_type.value if hasattr(alert.alert_type, "value") else str(alert.alert_type)
+            det_text = (
+                f"[{t_str.upper()}] Shelf {alert.shelf_id} Cell (R{alert.row_idx}, C{alert.item_idx})\n"
+                f"Expected: {alert.expected_sku or 'none'} | Detected: {alert.detected_sku or 'none'}"
+            )
             if alert.evidence_paths:
-                pm = QPixmap(alert.evidence_paths[-1])
-                if not pm.isNull():
-                    scaled = pm.scaled(self.evidence_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    self.evidence_label.setPixmap(scaled)
-                    return
-        self.evidence_label.setText("No image preview available")
+                for ep in reversed(alert.evidence_paths):
+                    from pathlib import Path
+                    if Path(ep).exists():
+                        pm = QPixmap(ep)
+                        if not pm.isNull():
+                            scaled = pm.scaled(self.evidence_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                            self.evidence_label.setPixmap(scaled)
+                            self.evidence_label.setToolTip(det_text)
+                            return
+            self.evidence_label.setText(det_text)
 
     def _confirm_selected(self) -> None:
         rows = self.table.selectedIndexes()

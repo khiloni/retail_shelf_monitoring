@@ -122,7 +122,7 @@ class ClassicalSyntheticSkuRecognizer:
         return sku_ids
 
 
-def run_full_demo(out_dir: str | Path = "outputs/runs/demo") -> int:
+def run_full_demo(out_dir: str | Path = "outputs/runs/demo", container: Any = None) -> int:
     out_p = Path(out_dir)
     out_p.mkdir(parents=True, exist_ok=True)
 
@@ -177,7 +177,31 @@ def run_full_demo(out_dir: str | Path = "outputs/runs/demo") -> int:
         clustering_params=clustering_params,
         meta={"synthetic": True},
     )
-    print(f"✓ Planogram constructed: {len(grid.rows)} rows, {grid.total_items} items")
+    print(f"[OK] Planogram constructed: {len(grid.rows)} rows, {grid.total_items} items")
+
+    # Persist planogram to repository for demo_shelf_01, S1, and shelf_1
+    try:
+        from shelf_monitor.container import ApplicationContainer
+        cont = container or ApplicationContainer()
+        plano_repo = cont.planogram_repository()
+        alert_gen_uc = cont.alert_generation_usecase()
+        alert_repo = cont.alert_repository()
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(plano_repo.save(planogram))
+            import copy
+            p_s1 = copy.deepcopy(planogram)
+            p_s1.shelf_id = "S1"
+            loop.run_until_complete(plano_repo.save(p_s1))
+            p_sh1 = copy.deepcopy(planogram)
+            p_sh1.shelf_id = "shelf_1"
+            loop.run_until_complete(plano_repo.save(p_sh1))
+        finally:
+            loop.close()
+    except Exception as e:
+        pass
 
     # 4. Process Video Stream
     cap = cv2.VideoCapture(str(video_path))
@@ -223,6 +247,24 @@ def run_full_demo(out_dir: str | Path = "outputs/runs/demo") -> int:
         for a_data in c_res["new_alerts"]:
             from shelf_monitor.entities.alert import Alert
             import uuid
+            ev_paths = []
+            try:
+                ref_c = planogram.grid.get_cell(a_data["row_idx"], a_data["item_idx"])
+                c_bbox = [ref_c.bbox.x1, ref_c.bbox.y1, ref_c.bbox.x2, ref_c.bbox.y2] if ref_c else None
+                if 'alert_gen_uc' in locals() and alert_gen_uc:
+                    ev_file = alert_gen_uc.save_evidence_image(
+                        frame_img=frame,
+                        shelf_id=a_data["shelf_id"],
+                        row_idx=a_data["row_idx"],
+                        item_idx=a_data["item_idx"],
+                        alert_type=str(a_data["alert_type"]),
+                        crop_bbox=c_bbox,
+                    )
+                    if ev_file:
+                        ev_paths.append(ev_file)
+            except Exception:
+                pass
+
             a = Alert(
                 alert_id=str(uuid.uuid4()),
                 shelf_id=a_data["shelf_id"],
@@ -233,9 +275,19 @@ def run_full_demo(out_dir: str | Path = "outputs/runs/demo") -> int:
                 detected_sku=a_data.get("detected_sku"),
                 first_seen=now,
                 last_seen=now,
+                evidence_paths=ev_paths,
                 consecutive_frames=a_data["consecutive_frames"],
             )
             all_alerts.append(a)
+            try:
+                if 'alert_repo' in locals() and alert_repo:
+                    loop = asyncio.new_event_loop()
+                    try:
+                        loop.run_until_complete(alert_repo.create(a))
+                    finally:
+                        loop.close()
+            except Exception:
+                pass
 
         # Draw overlay
         annotated = frame.copy()
@@ -302,7 +354,7 @@ def run_full_demo(out_dir: str | Path = "outputs/runs/demo") -> int:
         json.dump(final_metrics, f, indent=2)
 
     print("\n" + "=" * 65)
-    print("✓ DEMO COMPLETED SUCCESSFULLY!")
+    print("[OK] DEMO COMPLETED SUCCESSFULLY!")
     print(f"  Annotated Video : {out_video_path}")
     print(f"  Alerts JSON     : {alerts_file} ({len(all_alerts)} alerts raised)")
     print(f"  Metrics Report  : {metrics_file}")

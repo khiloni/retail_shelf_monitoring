@@ -138,7 +138,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
     homography_estimator = providers.Singleton(
         HomographyEstimator,
         ransac_reproj_threshold=config.provided.aligner.ransac_reproj,
-        min_alignment_confidence=config.provided.aligner.min_alignment_confidence,
+        min_inlier_ratio=config.provided.aligner.min_alignment_confidence,
     )
 
     shelf_aligner = providers.Singleton(
@@ -197,7 +197,7 @@ class ApplicationContainer(containers.DeclarativeContainer):
         grid_detector=grid_detector,
     )
 
-    stream_processing_usecase = providers.Factory(
+    stream_processing_usecase = providers.Singleton(
         StreamProcessingUseCase,
         shelf_aligner=shelf_aligner,
         detection_processing=detection_processing_usecase,

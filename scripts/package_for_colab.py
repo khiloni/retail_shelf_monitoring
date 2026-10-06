@@ -44,7 +44,7 @@ def package_project(output_zip: str | Path = "project_for_colab.zip") -> Path:
                     zf.write(p, arcname=p.as_posix())
                     files_added += 1
 
-    print(f"✓ Packed {files_added} files into {out_p} ({out_p.stat().st_size // 1024} KB)")
+    print(f"[OK] Packed {files_added} files into {out_p} ({out_p.stat().st_size // 1024} KB)")
     print(f"  Upload this file to Google Colab or Kaggle when running training/colab_train.ipynb")
     return out_p
 

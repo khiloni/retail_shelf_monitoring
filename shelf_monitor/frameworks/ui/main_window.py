@@ -53,6 +53,7 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._load_styles()
         self._setup_threads()
+        self._auto_load_active_planogram()
         self._show_model_status_banner()
 
     def _setup_ui(self) -> None:
@@ -219,6 +220,7 @@ class MainWindow(QMainWindow):
 
         self.inference_thread = InferenceThread(stream_proc)
         self.inference_thread.detections_ready.connect(self._on_detections_ready)
+        self.inference_thread.planogram_ready.connect(self.planogram_view.set_planogram)
         self.inference_thread.start()
 
         self.alert_analysis_thread = AlertAnalysisThread(alert_gen)
@@ -228,9 +230,38 @@ class MainWindow(QMainWindow):
         self.alert_thread.active_alerts_fetched.connect(self.alert_panel.set_alerts)
         self.alert_thread.start()
 
+    def _auto_load_active_planogram(self) -> None:
+        try:
+            repo = self.container.planogram_repository()
+            cfg = self.container.config()
+            shelf_id = getattr(cfg.aligner, "fixed_shelf_id", "S1") or "S1"
+            loop = asyncio.new_event_loop()
+            try:
+                planograms = loop.run_until_complete(repo.list_all())
+                if not planograms:
+                    ref_p = Path("data/demo/shelf_reference.jpg")
+                    if ref_p.exists():
+                        gen_uc = self.container.planogram_generation_usecase()
+                        plano = loop.run_until_complete(
+                            gen_uc.generate_planogram_from_reference(shelf_id, str(ref_p))
+                        )
+                        planograms = [plano]
+                if planograms:
+                    plano = next((p for p in planograms if p.shelf_id == shelf_id), planograms[0])
+                    self.planogram_view.set_planogram(plano)
+                    stream_proc = self.container.stream_processing_usecase()
+                    stream_proc.fixed_shelf_id = plano.shelf_id
+                    stream_proc._planograms[plano.shelf_id] = plano
+            finally:
+                loop.close()
+        except Exception as exc:
+            logger.debug(f"Auto planogram load: {exc}")
+
     def start_feed(self, source: Any) -> None:
         if self.capture_thread and self.capture_thread.isRunning():
             self.capture_thread.stop()
+
+        self._auto_load_active_planogram()
 
         self.capture_thread = CaptureThread(source=source)
         self.capture_thread.frame_captured.connect(self._on_frame_captured)
@@ -258,9 +289,11 @@ class MainWindow(QMainWindow):
         empty = summary.get("empty_count", 0)
         misplaced = summary.get("misplaced_count", 0)
         fill = summary.get("fill_pct", 0.0)
-        comp = summary.get("compliance_pct", 0.0)
+        comp = summary.get("compliance_pct", 100.0)
 
-        self.lbl_products.val_label.setText(str(total - empty))
+        # Products = number of products currently detected on shelf
+        n_products = len(detections) if len(detections) > 0 else max(0, total - empty)
+        self.lbl_products.val_label.setText(str(n_products))
         self.lbl_oos.val_label.setText(str(empty))
         self.lbl_misplaced.val_label.setText(str(misplaced))
         self.lbl_fill.val_label.setText(f"{fill:.1f}%")
@@ -330,6 +363,8 @@ class MainWindow(QMainWindow):
         try:
             loop.run_until_complete(alert_mgmt.confirm_alert(alert_id, staff_id))
             self.statusBar().showMessage(f"Alert {alert_id[:8]} confirmed by {staff_id}")
+            alerts = loop.run_until_complete(alert_mgmt.get_active_alerts())
+            self.alert_panel.set_alerts(alerts)
         finally:
             loop.close()
 
@@ -340,6 +375,8 @@ class MainWindow(QMainWindow):
         try:
             loop.run_until_complete(alert_mgmt.dismiss_alert(alert_id))
             self.statusBar().showMessage(f"Alert {alert_id[:8]} dismissed")
+            alerts = loop.run_until_complete(alert_mgmt.get_active_alerts())
+            self.alert_panel.set_alerts(alerts)
         finally:
             loop.close()
 

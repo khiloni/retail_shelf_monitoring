@@ -31,8 +31,17 @@ class SqlitePlanogramRepository(PlanogramRepository):
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
+        self._tables_initialized = False
+
+    async def _ensure_tables(self) -> None:
+        if not self._tables_initialized:
+            async with self._session_factory() as session:
+                async with session.bind.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+            self._tables_initialized = True
 
     async def create(self, planogram: Planogram) -> Planogram:
+        await self._ensure_tables()
         async with self._session_factory() as session:
             async with session.begin():
                 existing = await session.get(PlanogramModel, planogram.shelf_id)
@@ -51,7 +60,12 @@ class SqlitePlanogramRepository(PlanogramRepository):
             await session.commit()
         return planogram
 
+    async def save(self, planogram: Planogram) -> Planogram:
+        """Alias for create/update."""
+        return await self.create(planogram)
+
     async def get_by_shelf_id(self, shelf_id: str) -> Optional[Planogram]:
+        await self._ensure_tables()
         async with self._session_factory() as session:
             rec = await session.get(PlanogramModel, shelf_id)
             if rec:
@@ -62,6 +76,7 @@ class SqlitePlanogramRepository(PlanogramRepository):
         return await self.create(planogram)
 
     async def delete(self, shelf_id: str) -> bool:
+        await self._ensure_tables()
         async with self._session_factory() as session:
             async with session.begin():
                 rec = await session.get(PlanogramModel, shelf_id)
@@ -72,6 +87,7 @@ class SqlitePlanogramRepository(PlanogramRepository):
         return False
 
     async def list_all(self) -> List[Planogram]:
+        await self._ensure_tables()
         async with self._session_factory() as session:
             stmt = select(PlanogramModel)
             res = await session.execute(stmt)

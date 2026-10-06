@@ -41,7 +41,10 @@ class AlertThread(QThread):
             except Exception as e:
                 logger.error(f"Error fetching active alerts: {e}")
 
-            time.sleep(self.poll_interval)
+            elapsed = 0.0
+            while self._running and elapsed < self.poll_interval:
+                time.sleep(0.05)
+                elapsed += 0.05
 
         loop.close()
         logger.info("Alert thread stopped")

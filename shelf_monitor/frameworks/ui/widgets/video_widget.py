@@ -47,8 +47,8 @@ class VideoWidget(QLabel):
         # Convert OpenCV BGR -> RGB QImage
         h, w, ch = frame_img.shape
         bytes_per_line = ch * w
-        rgb_img = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
-        qimg = QImage(rgb_img.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        rgb_img = np.ascontiguousarray(cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB))
+        qimg = QImage(rgb_img.data, w, h, bytes_per_line, QImage.Format_RGB888).copy()
 
         # Draw overlays
         pixmap = QPixmap.fromImage(qimg)
@@ -81,3 +81,4 @@ class VideoWidget(QLabel):
         # Scale to widget size preserving aspect ratio
         scaled = pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.setPixmap(scaled)
+        self.setText("")

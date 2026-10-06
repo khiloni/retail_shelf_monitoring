@@ -91,9 +91,9 @@ def cmd_check_models(container: Any, models_dir_override: Optional[str] = None) 
     try:
         det = container.yolo_detector()
         detections = det.predict(dummy_img)
-        print(f"  [✓] Detector self-test passed (found {len(detections)} boxes on blank)")
+        print(f"  [OK] Detector self-test passed (found {len(detections)} boxes on blank)")
     except Exception as e:
-        print(f"  [✗] Detector self-test failed: {e}")
+        print(f"  [ERROR] Detector self-test failed: {e}")
         return 1
 
     if reg.mode == ModelMode.FULL:
@@ -101,11 +101,11 @@ def cmd_check_models(container: Any, models_dir_override: Optional[str] = None) 
             rec = container.sku_recognizer()
             dummy_crop = np.zeros((224, 224, 3), dtype=np.uint8)
             embs = rec.extract_embeddings([dummy_crop])
-            print(f"  [✓] Embedding self-test passed (shape: {embs.shape})")
+            print(f"  [OK] Embedding self-test passed (shape: {embs.shape})")
             skus = rec.batch_identify_skus([dummy_crop])
-            print(f"  [✓] FAISS query self-test passed (identified: {skus[0]})")
+            print(f"  [OK] FAISS query self-test passed (identified: {skus[0]})")
         except Exception as e:
-            print(f"  [✗] SKU recognition self-test failed: {e}")
+            print(f"  [ERROR] SKU recognition self-test failed: {e}")
             return 1
 
     print("\nSelf-test complete: OK")
@@ -120,11 +120,11 @@ def cmd_make_planogram(container: Any, image_path: str, shelf_id: str) -> int:
         planogram = loop.run_until_complete(
             usecase.generate_planogram_from_reference(shelf_id, image_path)
         )
-        print(f"✓ Planogram generated for shelf '{shelf_id}'")
+        print(f"[OK] Planogram generated for shelf '{shelf_id}'")
         print(f"  Rows: {len(planogram.grid.rows)}, Total items: {planogram.grid.total_items}")
         return 0
     except Exception as e:
-        print(f"✗ Failed to generate planogram: {e}")
+        print(f"[ERROR] Failed to generate planogram: {e}")
         return 1
     finally:
         loop.close()
@@ -142,6 +142,8 @@ def cmd_analyze_image(container: Any, image_path: str, shelf_id: str, out_dir: s
         return 1
 
     stream_proc = container.stream_processing_usecase()
+    if shelf_id:
+        stream_proc.fixed_shelf_id = shelf_id
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -180,14 +182,14 @@ def cmd_analyze_image(container: Any, image_path: str, shelf_id: str, out_dir: s
         with report_path.open("w") as f:
             json.dump(report, f, indent=2)
 
-        print(f"✓ Analysis complete for '{p_img.name}'")
+        print(f"[OK] Analysis complete for '{p_img.name}'")
         print(f"  Annotated image: {out_img_path}")
         print(f"  JSON report:     {report_path}")
         if res.summary:
             print(f"  Fill %: {res.summary.get('fill_pct')}% | Compliance %: {res.summary.get('compliance_pct')}%")
         return 0
     except Exception as e:
-        print(f"✗ Analysis failed: {e}")
+        print(f"[ERROR] Analysis failed: {e}")
         return 1
     finally:
         loop.close()
@@ -212,6 +214,8 @@ def cmd_analyze_video(container: Any, video_path: str, shelf_id: str, out_dir: s
     writer = cv2.VideoWriter(str(out_vid_path), fourcc, fps, (w, h))
 
     stream_proc = container.stream_processing_usecase()
+    if shelf_id:
+        stream_proc.fixed_shelf_id = shelf_id
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -271,7 +275,7 @@ def cmd_analyze_video(container: Any, video_path: str, shelf_id: str, out_dir: s
     with report_path.open("w") as f:
         json.dump(report, f, indent=2)
 
-    print(f"✓ Video processing complete: {frame_idx} frames")
+    print(f"[OK] Video processing complete: {frame_idx} frames")
     print(f"  Annotated video: {out_vid_path}")
     print(f"  JSON report:     {report_path}")
     return 0
@@ -293,17 +297,17 @@ def cmd_enroll_skus(container: Any, crops_dir: str, out_dir: Optional[str] = Non
             embedding_model_path=str(emb_model_path) if emb_model_path else None,
             embedding_dim=dim,
         )
-        print(f"✓ Successfully indexed {num_vecs} reference images across {num_classes} SKUs")
+        print(f"[OK] Successfully indexed {num_vecs} reference images across {num_classes} SKUs")
         return 0
     except Exception as e:
-        print(f"✗ SKU enrollment failed: {e}")
+        print(f"[ERROR] SKU enrollment failed: {e}")
         return 1
 
 
 def cmd_demo(container: Any, out_dir: str) -> int:
     """Run end-to-end zero-download offline demo."""
     from scripts.run_demo import run_full_demo
-    return run_full_demo(out_dir=out_dir)
+    return run_full_demo(out_dir=out_dir, container=container)
 
 
 def cmd_ui(container: Any) -> int:

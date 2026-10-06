@@ -41,6 +41,7 @@ class DatabaseManager:
         return self._session_factory
 
     async def create_tables(self) -> None:
+        from ..adaptors.repositories.sqlite_planogram_repo import PlanogramModel  # noqa: F401
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables created")

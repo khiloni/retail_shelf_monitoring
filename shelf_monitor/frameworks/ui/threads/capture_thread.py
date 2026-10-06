@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 class CaptureThread(QThread):
     """Reads frames from a video file, webcam index, or RTSP stream."""
 
-    frame_captured = Signal(np.ndarray, int)  # frame_img, frame_number
+    frame_captured = Signal(object, int)  # frame_img (np.ndarray), frame_number
     capture_finished = Signal()
     error_occurred = Signal(str)
 

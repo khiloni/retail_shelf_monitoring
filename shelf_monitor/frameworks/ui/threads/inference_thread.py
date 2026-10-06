@@ -22,11 +22,15 @@ class InferenceThread(QThread):
     detections_ready = Signal(object, list, list, dict, float)
     # args: (frame_img, detections, cell_states, summary, fps)
 
+    planogram_ready = Signal(object)
+    # args: (Planogram,) — emitted when a planogram is first loaded for the active shelf
+
     def __init__(self, stream_processing_usecase: StreamProcessingUseCase) -> None:
         super().__init__()
         self.stream_processing = stream_processing_usecase
         self._queue: Queue[tuple[np.ndarray, int]] = Queue(maxsize=10)
         self._running = False
+        self._last_planogram_shelf_id: Optional[str] = None
 
     def enqueue_frame(self, frame_img: np.ndarray, frame_idx: int) -> None:
         if self._running:
@@ -68,6 +72,13 @@ class InferenceThread(QThread):
                     t_last = now
                     frame_count = 0
 
+                # Notify UI when a planogram is loaded for the current shelf
+                shelf_id = self.stream_processing.fixed_shelf_id
+                planogram = self.stream_processing._planograms.get(shelf_id)
+                if planogram is not None and shelf_id != self._last_planogram_shelf_id:
+                    self._last_planogram_shelf_id = shelf_id
+                    self.planogram_ready.emit(planogram)
+
                 self.detections_ready.emit(
                     frame_img,
                     result.detections,
@@ -76,7 +87,7 @@ class InferenceThread(QThread):
                     fps,
                 )
             except Exception as e:
-                logger.error(f"Error in inference thread: {e}")
+                logger.error(f"Error in inference thread: {e}", exc_info=True)
 
         loop.close()
         logger.info("Inference thread stopped")
@@ -84,3 +95,4 @@ class InferenceThread(QThread):
     def stop(self) -> None:
         self._running = False
         self.wait(1000)
+

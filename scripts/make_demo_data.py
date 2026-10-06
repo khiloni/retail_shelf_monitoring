@@ -142,7 +142,7 @@ def generate_demo_video(
         writer.write(noisy_frame)
 
     writer.release()
-    print(f"✓ Generated synthetic demo video ({num_frames} frames) at: {out_p}")
+    print(f"[OK] Generated synthetic demo video ({num_frames} frames) at: {out_p}")
 
 
 def generate_crop_database(ref_items: List[Dict], ref_img: np.ndarray, out_dir: str | Path) -> None:
@@ -159,7 +159,84 @@ def generate_crop_database(ref_items: List[Dict], ref_img: np.ndarray, out_dir: 
         cdir.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(cdir / f"crop_{idx}.jpg"), crop)
 
-    print(f"✓ Saved SKU reference crops into: {out_p}")
+    print(f"[OK] Saved SKU reference crops into: {out_p}")
+
+
+def generate_additional_test_videos(ref_items: List[Dict], data_dir: Path) -> dict[str, Path]:
+    """Generates a comprehensive test suite of videos with different shelf events."""
+    width, height = 800, 600
+    fps = 15.0
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    num_rows = 3
+    row_height = 140
+    item_h = 100
+
+    scenarios = {
+        "multi_oos": {
+            "file": data_dir / "shelf_stream_multi_oos.mp4",
+            "title": "TEST: MULTIPLE OUT OF STOCK (Cells 0,1; 1,2; 2,4)",
+            "fn": lambda r, i, f: (r == 0 and i == 1 and f >= 8) or (r == 1 and i == 2 and f >= 12) or (r == 2 and i == 4 and f >= 16),
+            "sku_fn": lambda r, i, f, orig: orig,
+        },
+        "misplaced": {
+            "file": data_dir / "shelf_stream_misplaced.mp4",
+            "title": "TEST: MISPLACED SKUS (Cells 0,0 and 1,3)",
+            "fn": lambda r, i, f: False,
+            "sku_fn": lambda r, i, f, orig: "sku_tea_box" if (r == 0 and i == 0 and f >= 8) else ("sku_cereal_box" if (r == 1 and i == 3 and f >= 12) else orig),
+        },
+        "restock": {
+            "file": data_dir / "shelf_stream_restock.mp4",
+            "title": "TEST: RESTOCK EVENT (Empty cell 1,2 restocked at frame 25)",
+            "fn": lambda r, i, f: (r == 1 and i == 2 and f < 25),
+            "sku_fn": lambda r, i, f, orig: orig,
+        },
+        "compliant": {
+            "file": data_dir / "shelf_stream_compliant.mp4",
+            "title": "TEST: 100% COMPLIANT FULL SHELF",
+            "fn": lambda r, i, f: False,
+            "sku_fn": lambda r, i, f, orig: orig,
+        },
+    }
+
+    generated = {}
+    for name, sc in scenarios.items():
+        writer = cv2.VideoWriter(str(sc["file"]), fourcc, fps, (width, height))
+        for f in range(60):
+            frame = np.full((height, width, 3), 235, dtype=np.uint8)
+            for r in range(num_rows):
+                y_shelf = (r + 1) * row_height
+                cv2.rectangle(frame, (40, y_shelf + item_h + 2), (width - 40, y_shelf + item_h + 10), (140, 140, 150), -1)
+
+            for item in ref_items:
+                r = item["row_idx"]
+                i = item["item_idx"]
+                x1, y1, x2, y2 = item["bbox"]
+                bw, bh = x2 - x1, y2 - y1
+                sku = item["sku_id"]
+
+                if sc["fn"](r, i, f):
+                    continue
+
+                sku = sc["sku_fn"](r, i, f, sku)
+                draw_product_box(frame, x1, y1, bw, bh, sku)
+
+            noise = np.random.normal(0, 2, frame.shape).astype(np.int16)
+            noisy_frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+            cv2.putText(
+                noisy_frame,
+                f"{sc['title']} - FRAME {f:03d}",
+                (15, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (40, 40, 40),
+                2,
+            )
+            writer.write(noisy_frame)
+        writer.release()
+        print(f"[OK] Generated test video '{name}': {sc['file']}")
+        generated[name] = sc["file"]
+
+    return generated
 
 
 def make_all_demo_data(data_dir: str | Path = "data/demo") -> Tuple[Path, Path, Path]:
@@ -172,10 +249,11 @@ def make_all_demo_data(data_dir: str | Path = "data/demo") -> Tuple[Path, Path, 
 
     ref_img, items = generate_reference_shelf()
     cv2.imwrite(str(ref_img_path), ref_img)
-    print(f"✓ Generated reference shelf image: {ref_img_path}")
+    print(f"[OK] Generated reference shelf image: {ref_img_path}")
 
     generate_demo_video(items, video_path)
     generate_crop_database(items, ref_img, crops_dir)
+    generate_additional_test_videos(items, d_p)
 
     # Save ground truth metadata
     meta = {
